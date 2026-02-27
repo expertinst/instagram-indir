@@ -11,7 +11,7 @@ HESAPLAR = [
     "motive2m",
     "nerdesinpango",
 ]
-DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
+DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 # ═══════════════════════════════════════
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         hesap = hesap.strip()
         gecici = f"/tmp/{hesap}"
         os.makedirs(gecici, exist_ok=True)
-        drive_klasor = klasor_bul_veya_olustur(service, hesap, https://drive.google.com/drive/folders/1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T?usp=sharing)
+       drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
         print(f"\n📥 İşleniyor: @{hesap}")
 
         linkler = fastdl_indir(hesap, arsiv)
