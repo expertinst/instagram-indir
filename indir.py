@@ -8,8 +8,8 @@ from pathlib import Path
 # ═══════════════════════════════════════
 # SADECE BURAYI DÜZENLE
 HESAPLAR = [
-    "hesap_adi_1",
-    "hesap_adi_2",
+    "motive2m",
+    "nerdesinpango",
 ]
 DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
 # ═══════════════════════════════════════
