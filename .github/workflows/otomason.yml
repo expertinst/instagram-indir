@@ -16,4 +16,6 @@ jobs:
       - name: Calistir
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-        run: python indir.py
+        run: |
+          pip install requests google-api-python-client google-auth yt-dlp -q
+          python indir.py
