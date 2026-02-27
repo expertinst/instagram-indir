@@ -9,7 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  ...
   indir:
     runs-on: ubuntu-latest
     steps:
@@ -21,7 +20,7 @@ jobs:
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
-          pip install playwright google-api-python-client google-auth -q
+          pip install playwright requests google-api-python-client google-auth -q
           playwright install chromium
           playwright install-deps chromium
           python indir.py
