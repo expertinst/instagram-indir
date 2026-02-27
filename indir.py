@@ -3,7 +3,6 @@ import sys
 import subprocess
 import json
 import base64
-import requests
 import time
 from pathlib import Path
 
@@ -13,47 +12,64 @@ HESAPLAR = [
     "nerdesinpango",
 ]
 DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
+ARSIV_DOSYA = "arsiv.json"
 # ═══════════════════════════════════════
 
 def kurulum():
     subprocess.check_call([sys.executable, "-m", "pip", "install",
-                          "requests", "google-api-python-client",
+                          "playwright", "google-api-python-client",
                           "google-auth", "-q"])
+    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
-def fastdl_indir(url):
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Origin": "https://fastdl.dev",
-            "Referer": "https://fastdl.dev/",
-        }
-        resp = requests.post(
-            "https://fastdl.dev/api/ajaxSearch",
-            data={"q": url, "t": "media", "v": "v2", "lang": "en", "cftoken": ""},
-            headers=headers,
-            timeout=30
-        )
-        print(f"  📡 FastDl yanıtı: {resp.status_code}")
-        print(f"  📡 FastDl içerik: {resp.text[:500]}")
-        data = resp.json()
-        linkler = []
-        if data.get("url"):
-            for item in data["url"]:
-                if item.get("url"):
-                    linkler.append(item["url"])
-        return linkler
-    except Exception as e:
-        print(f"  ❌ FastDl hatası: {e}")
-        return []
+def arsiv_oku():
+    if os.path.exists(ARSIV_DOSYA):
+        with open(ARSIV_DOSYA, "r") as f:
+            return json.load(f)
+    return []
+
+def arsiv_kaydet(arsiv):
+    with open(ARSIV_DOSYA, "w") as f:
+        json.dump(arsiv, f)
+
+def fastdl_indir(hesap, arsiv):
+    from playwright.sync_api import sync_playwright
+    linkler = []
+    urls = [
+        f"https://www.instagram.com/stories/{hesap}/",
+        f"https://www.instagram.com/{hesap}/",
+    ]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        for url in urls:
+            print(f"  🔗 {url}")
+            try:
+                page.goto("https://fastdl.dev/", timeout=30000)
+                page.wait_for_selector('input[name="url"], input[type="text"]', timeout=10000)
+                input_el = page.locator('input[name="url"], input[type="text"]').first
+                input_el.fill(url)
+                page.keyboard.press("Enter")
+                page.wait_for_selector('.download-box, .download-items, a[href*="mp4"], a[href*="snapcdn"]', timeout=15000)
+                time.sleep(2)
+                # Download linklerini topla
+                anchors = page.locator('a[href*="snapcdn"], a[href*=".mp4"], a[href*=".jpg"]').all()
+                for a in anchors:
+                    href = a.get_attribute("href")
+                    if href and href not in arsiv and href not in linkler:
+                        linkler.append(href)
+                        print(f"  ✅ Link bulundu: {href[:80]}")
+            except Exception as e:
+                print(f"  ❌ Hata: {e}")
+        browser.close()
+    return linkler
+
 def dosya_indir(url, hedef_yol):
+    import urllib.request
     try:
-        resp = requests.get(url, stream=True, timeout=60)
-        with open(hedef_yol, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
+        urllib.request.urlretrieve(url, hedef_yol)
         return True
-    except:
+    except Exception as e:
+        print(f"  ❌ İndirme hatası: {e}")
         return False
 
 def drive_baglanti():
@@ -86,34 +102,29 @@ def drive_yukle(service, dosya_yolu, klasor_id):
     service.files().create(body=meta, media_body=media).execute()
     print(f"  ☁️ Yüklendi: {ad}")
 
-def hesap_indir(service, hesap):
-    gecici = f"/tmp/{hesap}"
-    os.makedirs(gecici, exist_ok=True)
-    drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
-    print(f"\n📥 İşleniyor: @{hesap}")
-
-    urls = [
-        f"https://www.instagram.com/stories/{hesap}/",
-        f"https://www.instagram.com/{hesap}/",
-    ]
-
-    yuklenen = 0
-    for url in urls:
-        print(f"  🔗 {url}")
-        linkler = fastdl_indir(url)
-        for i, link in enumerate(linkler):
-            ext = "mp4" if "video" in link else "jpg"
-            dosya_adi = f"{gecici}/{hesap}_{int(time.time())}_{i}.{ext}"
-            if dosya_indir(link, dosya_adi):
-                drive_yukle(service, dosya_adi, drive_klasor)
-                yuklenen += 1
-        time.sleep(2)
-
-    print(f"✅ {hesap}: {yuklenen} dosya yüklendi")
-
 if __name__ == "__main__":
     kurulum()
     service = drive_baglanti()
+    arsiv = arsiv_oku()
+
     for hesap in HESAPLAR:
-        hesap_indir(service, hesap.strip())
+        hesap = hesap.strip()
+        gecici = f"/tmp/{hesap}"
+        os.makedirs(gecici, exist_ok=True)
+        drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+        print(f"\n📥 İşleniyor: @{hesap}")
+
+        linkler = fastdl_indir(hesap, arsiv)
+        yuklenen = 0
+        for i, link in enumerate(linkler):
+            ext = "mp4" if "mp4" in link else "jpg"
+            dosya_adi = f"{gecici}/{hesap}_{int(time.time())}_{i}.{ext}"
+            if dosya_indir(link, dosya_adi):
+                drive_yukle(service, dosya_adi, drive_klasor)
+                arsiv.append(link)
+                yuklenen += 1
+
+        print(f"✅ {hesap}: {yuklenen} dosya yüklendi")
+
+    arsiv_kaydet(arsiv)
     print("\n🎉 Tamamlandı!")
