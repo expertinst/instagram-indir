@@ -6,23 +6,22 @@ import base64
 from pathlib import Path
 
 # ═══════════════════════════════════════
-# TAKİP EDİLECEK HESAPLAR
+# TAKİP EDİLECEK HESAPLAR — SADECE BURAYI DÜZENLE
 HESAPLAR = [
     "motive2m",
     "nerdesinpango",
 ]
-DRIVE_KLASOR_ID = "BURAYA_KLASOR_ID_YAZACAZ"  # sonra dolduracağız
+DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
 # ═══════════════════════════════════════
 
 def kurulum():
-    subprocess.check_call([sys.executable, "-m", "pip", "install", 
+    subprocess.check_call([sys.executable, "-m", "pip", "install",
                           "instaloader", "google-api-python-client",
                           "google-auth", "-q"])
 
 def drive_baglanti():
     from googleapiclient.discovery import build
     from google.oauth2 import service_account
-    import json, base64
 
     creds_json = base64.b64decode(os.environ["GDRIVE_CREDENTIALS"]).decode()
     creds_dict = json.loads(creds_json)
@@ -45,7 +44,8 @@ def drive_yukle(service, dosya_yolu, klasor_id):
     q = f"name='{ad}' and '{klasor_id}' in parents and trashed=false"
     varmi = service.files().list(q=q).execute().get("files", [])
     if varmi:
-        return  # zaten var, atlat
+        print(f"  ⏭️ Zaten var, atlandı: {ad}")
+        return
     meta = {"name": ad, "parents": [klasor_id]}
     media = MediaFileUpload(dosya_yolu)
     service.files().create(body=meta, media_body=media).execute()
@@ -53,6 +53,7 @@ def drive_yukle(service, dosya_yolu, klasor_id):
 
 def hesap_indir_ve_yukle(service, hesap):
     import instaloader
+
     L = instaloader.Instaloader(
         download_videos=True,
         download_video_thumbnails=False,
@@ -61,29 +62,24 @@ def hesap_indir_ve_yukle(service, hesap):
         save_metadata=False,
         post_metadata_txt_pattern=""
     )
-    
+
     gecici_klasor = f"/tmp/{hesap}"
     os.makedirs(gecici_klasor, exist_ok=True)
-    
+    L.dirname_pattern = gecici_klasor
+
     drive_hesap_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
-    
+
     print(f"\n📥 İndiriliyor: @{hesap}")
     try:
         profil = instaloader.Profile.from_username(L.context, hesap)
-        
-        # Postlar
+
         for post in profil.get_posts():
-            dosya_adi = f"{post.date_utc.strftime('%Y-%m-%d')}_{post.shortcode}"
-            hedef = os.path.join(gecici_klasor, dosya_adi)
-            L.dirname_pattern = gecici_klasor
             L.download_post(post, target=gecici_klasor)
-            break  # test için sadece son post, sonra kaldırırız
-            
-        # Klasördeki her dosyayı Drive'a yükle
+
         for dosya in Path(gecici_klasor).glob("*"):
-            if dosya.is_file() and not dosya.suffix == ".txt":
+            if dosya.is_file() and dosya.suffix in [".mp4", ".jpg", ".jpeg", ".png"]:
                 drive_yukle(service, str(dosya), drive_hesap_klasor)
-                
+
         print(f"✅ Tamamlandı: @{hesap}")
     except Exception as e:
         print(f"❌ Hata ({hesap}): {e}")
