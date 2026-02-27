@@ -2,11 +2,11 @@ import os
 import sys
 import subprocess
 import json
-import base64
 import time
 from pathlib import Path
 
 # ═══════════════════════════════════════
+# AYARLAR
 HESAPLAR = [
     "motive2m",
     "nerdesinpango",
@@ -16,9 +16,10 @@ ARSIV_DOSYA = "arsiv.json"
 # ═══════════════════════════════════════
 
 def kurulum():
+    print("📦 Kütüphaneler kuruluyor...")
     subprocess.check_call([sys.executable, "-m", "pip", "install",
                           "playwright", "google-api-python-client",
-                          "google-auth", "-q"])
+                          "google-auth", "requests", "-q"])
     subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
 def arsiv_oku():
@@ -42,54 +43,61 @@ def fastdl_indir(hesap, arsiv):
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         for url in urls:
-            print(f"  🔗 {url}")
+            print(f"  🔗 Kaynak taranıyor: {url}")
             try:
                 page.goto("https://fastdl.dev/", timeout=30000)
-                page.wait_for_selector('input[name="url"], input[type="text"]', timeout=10000)
-                input_el = page.locator('input[name="url"], input[type="text"]').first
+                page.wait_for_selector('input[name="url"]', timeout=10000)
+                input_el = page.locator('input[name="url"]').first
                 input_el.fill(url)
                 page.keyboard.press("Enter")
-                page.wait_for_selector('.download-box, .download-items, a[href*="mp4"], a[href*="snapcdn"]', timeout=15000)
+                page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=15000)
                 time.sleep(2)
-                # Download linklerini topla
+                
+                # Linkleri topla
                 anchors = page.locator('a[href*="snapcdn"], a[href*=".mp4"], a[href*=".jpg"]').all()
                 for a in anchors:
                     href = a.get_attribute("href")
                     if href and href not in arsiv and href not in linkler:
                         linkler.append(href)
-                        print(f"  ✅ Link bulundu: {href[:80]}")
+                        print(f"  ✅ Yeni Link: {href[:60]}...")
             except Exception as e:
-                print(f"  ❌ Hata: {e}")
+                print(f"  ⚠️ Tarama uyarısı: {e}")
         browser.close()
     return linkler
 
 def dosya_indir(url, hedef_yol):
     import requests
     try:
-        headers = {
-            "Referer": "https://fastdl.dev/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         resp = requests.get(url, headers=headers, stream=True, timeout=60)
         if resp.status_code == 200:
             with open(hedef_yol, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192):
                     f.write(chunk)
             return True
-        print(f"  ❌ İndirme hatası: HTTP {resp.status_code}")
+    except Exception:
         return False
-    except Exception as e:
-        print(f"  ❌ İndirme hatası: {e}")
-        return False
+    return False
 
+# ✨ YENİ: 2TB KOTA İÇİN OAUTH BAĞLANTISI
 def drive_baglanti():
     from googleapiclient.discovery import build
-    from google.oauth2 import service_account
-    creds_json = base64.b64decode(os.environ["GDRIVE_CREDENTIALS"]).decode()
-    creds_dict = json.loads(creds_json)
-    creds = service_account.Credentials.from_service_account_info(
-        creds_dict, scopes=["https://www.googleapis.com/auth/drive"]
-    )
+    from google.oauth2.credentials import Credentials
+    
+    # GitHub Secrets'taki o uzun token metnini alıyoruz
+    token_json = os.environ.get("GDRIVE_TOKEN")
+    if not token_json:
+        print("❌ HATA: GDRIVE_TOKEN bulunamadı! GitHub Secrets ayarlarını kontrol et.")
+        sys.exit(1)
+    
+    creds_dict = json.loads(token_json)
+    creds = Credentials.from_authorized_user_info(creds_dict)
+    
+    # Eğer token eskimişse otomatik yenile
+    if creds.expired and creds.refresh_token:
+        from google.auth.transport.requests import Request
+        creds.refresh(Request())
+        
     return build("drive", "v3", credentials=creds)
 
 def klasor_bul_veya_olustur(service, ad, ust_id):
@@ -103,14 +111,17 @@ def klasor_bul_veya_olustur(service, ad, ust_id):
 def drive_yukle(service, dosya_yolu, klasor_id):
     from googleapiclient.http import MediaFileUpload
     ad = os.path.basename(dosya_yolu)
+    
+    # Aynı isimde dosya var mı kontrolü
     q = f"name='{ad}' and '{klasor_id}' in parents and trashed=false"
     if service.files().list(q=q).execute().get("files"):
-        print(f"  ⏭️ Zaten var: {ad}")
+        print(f"  ⏭️ Zaten yüklü: {ad}")
         return
+
     meta = {"name": ad, "parents": [klasor_id]}
     media = MediaFileUpload(dosya_yolu, resumable=True)
     service.files().create(body=meta, media_body=media).execute()
-    print(f"  ☁️ Yüklendi: {ad}")
+    print(f"  ☁️ Drive'a yüklendi: {ad}")
 
 if __name__ == "__main__":
     kurulum()
@@ -118,23 +129,22 @@ if __name__ == "__main__":
     arsiv = arsiv_oku()
 
     for hesap in HESAPLAR:
-        hesap = hesap.strip()
-        gecici = f"/tmp/{hesap}"
-        os.makedirs(gecici, exist_ok=True)
-        drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
-        print(f"\n📥 İşleniyor: @{hesap}")
+        gecici_klasor = f"temp_{hesap}"
+        os.makedirs(gecici_klasor, exist_ok=True)
+        
+        drive_hedef = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+        print(f"\n🚀 İşlem başlıyor: @{hesap}")
 
         linkler = fastdl_indir(hesap, arsiv)
-        yuklenen = 0
         for i, link in enumerate(linkler):
             ext = "mp4" if "mp4" in link else "jpg"
-            dosya_adi = f"{gecici}/{hesap}_{int(time.time())}_{i}.{ext}"
+            dosya_adi = f"{gecici_klasor}/{hesap}_{int(time.time())}_{i}.{ext}"
+            
             if dosya_indir(link, dosya_adi):
-                drive_yukle(service, dosya_adi, drive_klasor)
+                drive_yukle(service, dosya_adi, drive_hedef)
                 arsiv.append(link)
-                yuklenen += 1
-
-        print(f"✅ {hesap}: {yuklenen} dosya yüklendi")
+                # İndirilen dosyayı temizle (GitHub alanını doldurmamak için)
+                if os.path.exists(dosya_adi): os.remove(dosya_adi)
 
     arsiv_kaydet(arsiv)
-    print("\n🎉 Tamamlandı!")
+    print("\n🎉 İşlem başarıyla tamamlandı!")
