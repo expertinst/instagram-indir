@@ -21,7 +21,6 @@ def kurulum():
                           "google-auth", "-q"])
 
 def fastdl_indir(url):
-    """FastDl API'sine istek at, download linklerini döndür"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -37,6 +36,8 @@ def fastdl_indir(url):
             headers=headers,
             timeout=30
         )
+        print(f"  📡 FastDl yanıtı: {resp.status_code}")
+        print(f"  📡 FastDl içerik: {resp.text[:500]}")
         data = resp.json()
         linkler = []
         if data.get("url"):
@@ -47,7 +48,6 @@ def fastdl_indir(url):
     except Exception as e:
         print(f"  ❌ FastDl hatası: {e}")
         return []
-
 def dosya_indir(url, hedef_yol):
     try:
         resp = requests.get(url, stream=True, timeout=60)
