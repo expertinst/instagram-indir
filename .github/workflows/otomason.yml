@@ -17,5 +17,14 @@ jobs:
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
-          pip install requests google-api-python-client google-auth yt-dlp -q
+          pip install playwright google-api-python-client google-auth -q
+          playwright install chromium
+          playwright install-deps chromium
           python indir.py
+      - name: Arsivi kaydet
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add arsiv.json
+          git diff --staged --quiet || git commit -m "arsiv guncellendi"
+          git push
