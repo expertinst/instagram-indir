@@ -121,7 +121,7 @@ if __name__ == "__main__":
         hesap = hesap.strip()
         gecici = f"/tmp/{hesap}"
         os.makedirs(gecici, exist_ok=True)
-        drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+        drive_klasor = klasor_bul_veya_olustur(service, hesap, https://drive.google.com/drive/folders/1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T?usp=sharing)
         print(f"\n📥 İşleniyor: @{hesap}")
 
         linkler = fastdl_indir(hesap, arsiv)
