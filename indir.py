@@ -64,10 +64,20 @@ def fastdl_indir(hesap, arsiv):
     return linkler
 
 def dosya_indir(url, hedef_yol):
-    import urllib.request
+    import requests
     try:
-        urllib.request.urlretrieve(url, hedef_yol)
-        return True
+        headers = {
+            "Referer": "https://fastdl.dev/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        resp = requests.get(url, headers=headers, stream=True, timeout=60)
+        if resp.status_code == 200:
+            with open(hedef_yol, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        print(f"  ❌ İndirme hatası: HTTP {resp.status_code}")
+        return False
     except Exception as e:
         print(f"  ❌ İndirme hatası: {e}")
         return False
