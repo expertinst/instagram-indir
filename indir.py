@@ -3,10 +3,11 @@ import sys
 import subprocess
 import json
 import base64
+import requests
+import time
 from pathlib import Path
 
 # ═══════════════════════════════════════
-# SADECE BURAYI DÜZENLE
 HESAPLAR = [
     "motive2m",
     "nerdesinpango",
@@ -16,13 +17,50 @@ DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
 
 def kurulum():
     subprocess.check_call([sys.executable, "-m", "pip", "install",
-                          "yt-dlp", "google-api-python-client",
+                          "requests", "google-api-python-client",
                           "google-auth", "-q"])
+
+def fastdl_indir(url):
+    """FastDl API'sine istek at, download linklerini döndür"""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://fastdl.app",
+            "Referer": "https://fastdl.app/",
+        }
+        resp = requests.post(
+            "https://fastdl.app/api/convert",
+            data={"url": url},
+            headers=headers,
+            timeout=30
+        )
+        data = resp.json()
+        linkler = []
+        if data.get("url"):
+            for item in data["url"]:
+                if item.get("url"):
+                    linkler.append(item["url"])
+        return linkler
+    except Exception as e:
+        print(f"  ❌ FastDl hatası: {e}")
+        return []
+
+def dosya_indir(url, hedef_yol):
+    try:
+        resp = requests.get(url, stream=True, timeout=60)
+        with open(hedef_yol, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return True
+    except:
+        return False
 
 def drive_baglanti():
     from googleapiclient.discovery import build
     from google.oauth2 import service_account
-
     creds_json = base64.b64decode(os.environ["GDRIVE_CREDENTIALS"]).decode()
     creds_dict = json.loads(creds_json)
     creds = service_account.Credentials.from_service_account_info(
@@ -52,43 +90,28 @@ def drive_yukle(service, dosya_yolu, klasor_id):
 
 def hesap_indir(service, hesap):
     gecici = f"/tmp/{hesap}"
-    arsiv = f"/tmp/{hesap}_arsiv.txt"
     os.makedirs(gecici, exist_ok=True)
-
     drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+    print(f"\n📥 İşleniyor: @{hesap}")
 
-    print(f"\n📥 Kontrol ediliyor: @{hesap}")
-
-    # Postlar ve Reels
-    subprocess.run([
-        sys.executable, "-m", "yt_dlp",
-        "--download-archive", arsiv,
-        "--output", f"{gecici}/%(upload_date)s_%(id)s.%(ext)s",
-        "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "--no-warnings",
-        "--quiet",
-        f"https://www.instagram.com/{hesap}/",
-    ])
-
-    # Stories
-    subprocess.run([
-        sys.executable, "-m", "yt_dlp",
-        "--download-archive", arsiv,
-        "--output", f"{gecici}/story_%(upload_date)s_%(id)s.%(ext)s",
-        "--format", "best",
-        "--no-warnings",
-        "--quiet",
+    urls = [
         f"https://www.instagram.com/stories/{hesap}/",
-    ])
+        f"https://www.instagram.com/{hesap}/",
+    ]
 
-    # Drive'a yükle
     yuklenen = 0
-    for dosya in Path(gecici).glob("*"):
-        if dosya.is_file() and dosya.suffix in [".mp4", ".jpg", ".jpeg", ".png", ".webp"]:
-            drive_yukle(service, str(dosya), drive_klasor)
-            yuklenen += 1
+    for url in urls:
+        print(f"  🔗 {url}")
+        linkler = fastdl_indir(url)
+        for i, link in enumerate(linkler):
+            ext = "mp4" if "video" in link else "jpg"
+            dosya_adi = f"{gecici}/{hesap}_{int(time.time())}_{i}.{ext}"
+            if dosya_indir(link, dosya_adi):
+                drive_yukle(service, dosya_adi, drive_klasor)
+                yuklenen += 1
+        time.sleep(2)
 
-    print(f"✅ {hesap}: {yuklenen} dosya işlendi")
+    print(f"✅ {hesap}: {yuklenen} dosya yüklendi")
 
 if __name__ == "__main__":
     kurulum()
