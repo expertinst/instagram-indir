@@ -40,18 +40,30 @@ def fastdl_indir(hesap, arsiv):
         f"https://www.instagram.com/{hesap}/",
     ]
     with sync_playwright() as p:
+        # Daha "insansı" bir tarayıcı kimliği (User-Agent) ekliyoruz
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+        
         for url in urls:
             print(f"  🔗 Kaynak taranıyor: {url}")
             try:
-                page.goto("https://fastdl.dev/", timeout=30000)
-                page.wait_for_selector('input[name="url"]', timeout=10000)
-                input_el = page.locator('input[name="url"]').first
+                # Bekleme süresini 60 saniyeye çıkarıyoruz (Site yavaş açılabilir)
+                page.goto("https://fastdl.dev/", wait_until="networkidle", timeout=60000)
+                
+                # Kutucuğun gelmesini daha sabırla bekliyoruz
+                input_selector = 'input[placeholder*="Instagram"], input[name="url"]'
+                page.wait_for_selector(input_selector, timeout=30000)
+                
+                input_el = page.locator(input_selector).first
                 input_el.fill(url)
                 page.keyboard.press("Enter")
-                page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=15000)
-                time.sleep(2)
+                
+                # İndirme butonlarının gelmesini bekle
+                page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=30000)
+                time.sleep(5) # Sayfanın tam yüklenmesi için kısa bir mola
                 
                 # Linkleri topla
                 anchors = page.locator('a[href*="snapcdn"], a[href*=".mp4"], a[href*=".jpg"]').all()
@@ -59,9 +71,9 @@ def fastdl_indir(hesap, arsiv):
                     href = a.get_attribute("href")
                     if href and href not in arsiv and href not in linkler:
                         linkler.append(href)
-                        print(f"  ✅ Yeni Link: {href[:60]}...")
+                        print(f"  ✅ Yeni Link bulundu!")
             except Exception as e:
-                print(f"  ⚠️ Tarama uyarısı: {e}")
+                print(f"  ⚠️ Tarama uyarısı: Siteye ulaşılamadı veya kutucuk bulunamadı.")
         browser.close()
     return linkler
 
