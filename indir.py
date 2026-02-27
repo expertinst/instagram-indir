@@ -6,17 +6,17 @@ import base64
 from pathlib import Path
 
 # ═══════════════════════════════════════
-# TAKİP EDİLECEK HESAPLAR — SADECE BURAYI DÜZENLE
+# SADECE BURAYI DÜZENLE
 HESAPLAR = [
-    "motive2m",
-    "nerdesinpango",
+    "hesap_adi_1",
+    "hesap_adi_2",
 ]
 DRIVE_KLASOR_ID = "1Oxvkiq2QcEhjTIBCH7leGsKPuSNpKPCd"
 # ═══════════════════════════════════════
 
 def kurulum():
     subprocess.check_call([sys.executable, "-m", "pip", "install",
-                          "instaloader", "google-api-python-client",
+                          "yt-dlp", "google-api-python-client",
                           "google-auth", "-q"])
 
 def drive_baglanti():
@@ -30,63 +30,69 @@ def drive_baglanti():
     )
     return build("drive", "v3", credentials=creds)
 
-def klasor_bul_veya_olustur(service, ad, ust_klasor_id):
-    q = f"name='{ad}' and '{ust_klasor_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+def klasor_bul_veya_olustur(service, ad, ust_id):
+    q = f"name='{ad}' and '{ust_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     sonuc = service.files().list(q=q).execute().get("files", [])
     if sonuc:
         return sonuc[0]["id"]
-    meta = {"name": ad, "mimeType": "application/vnd.google-apps.folder", "parents": [ust_klasor_id]}
+    meta = {"name": ad, "mimeType": "application/vnd.google-apps.folder", "parents": [ust_id]}
     return service.files().create(body=meta, fields="id").execute()["id"]
 
 def drive_yukle(service, dosya_yolu, klasor_id):
     from googleapiclient.http import MediaFileUpload
     ad = os.path.basename(dosya_yolu)
     q = f"name='{ad}' and '{klasor_id}' in parents and trashed=false"
-    varmi = service.files().list(q=q).execute().get("files", [])
-    if varmi:
-        print(f"  ⏭️ Zaten var, atlandı: {ad}")
+    if service.files().list(q=q).execute().get("files"):
+        print(f"  ⏭️ Zaten var: {ad}")
         return
     meta = {"name": ad, "parents": [klasor_id]}
-    media = MediaFileUpload(dosya_yolu)
+    media = MediaFileUpload(dosya_yolu, resumable=True)
     service.files().create(body=meta, media_body=media).execute()
     print(f"  ☁️ Yüklendi: {ad}")
 
-def hesap_indir_ve_yukle(service, hesap):
-    import instaloader
+def hesap_indir(service, hesap):
+    gecici = f"/tmp/{hesap}"
+    arsiv = f"/tmp/{hesap}_arsiv.txt"
+    os.makedirs(gecici, exist_ok=True)
 
-    L = instaloader.Instaloader(
-        download_videos=True,
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False,
-        post_metadata_txt_pattern=""
-    )
+    drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
 
-    gecici_klasor = f"/tmp/{hesap}"
-    os.makedirs(gecici_klasor, exist_ok=True)
-    L.dirname_pattern = gecici_klasor
+    print(f"\n📥 Kontrol ediliyor: @{hesap}")
 
-    drive_hesap_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+    # Postlar ve Reels
+    subprocess.run([
+        sys.executable, "-m", "yt_dlp",
+        "--download-archive", arsiv,
+        "--output", f"{gecici}/%(upload_date)s_%(id)s.%(ext)s",
+        "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--no-warnings",
+        "--quiet",
+        f"https://www.instagram.com/{hesap}/",
+    ])
 
-    print(f"\n📥 İndiriliyor: @{hesap}")
-    try:
-        profil = instaloader.Profile.from_username(L.context, hesap)
+    # Stories
+    subprocess.run([
+        sys.executable, "-m", "yt_dlp",
+        "--download-archive", arsiv,
+        "--output", f"{gecici}/story_%(upload_date)s_%(id)s.%(ext)s",
+        "--format", "best",
+        "--no-warnings",
+        "--quiet",
+        f"https://www.instagram.com/stories/{hesap}/",
+    ])
 
-        for post in profil.get_posts():
-            L.download_post(post, target=gecici_klasor)
+    # Drive'a yükle
+    yuklenen = 0
+    for dosya in Path(gecici).glob("*"):
+        if dosya.is_file() and dosya.suffix in [".mp4", ".jpg", ".jpeg", ".png", ".webp"]:
+            drive_yukle(service, str(dosya), drive_klasor)
+            yuklenen += 1
 
-        for dosya in Path(gecici_klasor).glob("*"):
-            if dosya.is_file() and dosya.suffix in [".mp4", ".jpg", ".jpeg", ".png"]:
-                drive_yukle(service, str(dosya), drive_hesap_klasor)
-
-        print(f"✅ Tamamlandı: @{hesap}")
-    except Exception as e:
-        print(f"❌ Hata ({hesap}): {e}")
+    print(f"✅ {hesap}: {yuklenen} dosya işlendi")
 
 if __name__ == "__main__":
     kurulum()
     service = drive_baglanti()
     for hesap in HESAPLAR:
-        hesap_indir_ve_yukle(service, hesap.strip())
-    print("\n🎉 Bitti!")
+        hesap_indir(service, hesap.strip())
+    print("\n🎉 Tamamlandı!")
