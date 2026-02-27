@@ -94,3 +94,47 @@ def drive_baglanti():
 
 def klasor_bul_veya_olustur(service, ad, ust_id):
     q = f"name='{ad}' and '{ust_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    sonuc = service.files().list(q=q).execute().get("files", [])
+    if sonuc:
+        return sonuc[0]["id"]
+    meta = {"name": ad, "mimeType": "application/vnd.google-apps.folder", "parents": [ust_id]}
+    return service.files().create(body=meta, fields="id").execute()["id"]
+
+def drive_yukle(service, dosya_yolu, klasor_id):
+    from googleapiclient.http import MediaFileUpload
+    ad = os.path.basename(dosya_yolu)
+    q = f"name='{ad}' and '{klasor_id}' in parents and trashed=false"
+    if service.files().list(q=q).execute().get("files"):
+        print(f"  ⏭️ Zaten var: {ad}")
+        return
+    meta = {"name": ad, "parents": [klasor_id]}
+    media = MediaFileUpload(dosya_yolu, resumable=True)
+    service.files().create(body=meta, media_body=media).execute()
+    print(f"  ☁️ Yüklendi: {ad}")
+
+if __name__ == "__main__":
+    kurulum()
+    service = drive_baglanti()
+    arsiv = arsiv_oku()
+
+    for hesap in HESAPLAR:
+        hesap = hesap.strip()
+        gecici = f"/tmp/{hesap}"
+        os.makedirs(gecici, exist_ok=True)
+        drive_klasor = klasor_bul_veya_olustur(service, hesap, DRIVE_KLASOR_ID)
+        print(f"\n📥 İşleniyor: @{hesap}")
+
+        linkler = fastdl_indir(hesap, arsiv)
+        yuklenen = 0
+        for i, link in enumerate(linkler):
+            ext = "mp4" if "mp4" in link else "jpg"
+            dosya_adi = f"{gecici}/{hesap}_{int(time.time())}_{i}.{ext}"
+            if dosya_indir(link, dosya_adi):
+                drive_yukle(service, dosya_adi, drive_klasor)
+                arsiv.append(link)
+                yuklenen += 1
+
+        print(f"✅ {hesap}: {yuklenen} dosya yüklendi")
+
+    arsiv_kaydet(arsiv)
+    print("\n🎉 Tamamlandı!")
