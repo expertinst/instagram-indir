@@ -24,15 +24,13 @@ def fastdl_indir(url):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "X-Requested-With": "XMLHttpRequest",
-            "Origin": "https://fastdl.app",
-            "Referer": "https://fastdl.app/",
+            "Origin": "https://fastdl.dev",
+            "Referer": "https://fastdl.dev/",
         }
         resp = requests.post(
-            "https://fastdl.app/api/convert",
-            data={"url": url},
+            "https://fastdl.dev/api/ajaxSearch",
+            data={"q": url, "t": "media", "v": "v2", "lang": "en", "cftoken": ""},
             headers=headers,
             timeout=30
         )
