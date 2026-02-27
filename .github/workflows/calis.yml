@@ -1,0 +1,19 @@
+name: Instagram İndirici
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # her 6 saatte bir çalışır
+  workflow_dispatch:        # elle de başlatabilirsin
+
+jobs:
+  indir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Çalıştır
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+        run: python indir.py
