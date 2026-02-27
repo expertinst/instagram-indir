@@ -27,7 +27,6 @@ def arsiv_kaydet(arsiv):
 def fastdl_indir(hesap, arsiv):
     from playwright.sync_api import sync_playwright
     linkler = []
-    # Sadece hikayeye odaklanmak için linki netleştiriyoruz
     story_url = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
@@ -43,21 +42,21 @@ def fastdl_indir(hesap, arsiv):
             page.fill(input_selector, story_url)
             page.keyboard.press("Enter")
             
-            # Sonuçların yüklenmesi için bekle
-            page.wait_for_selector('.download-items', timeout=30000)
-            time.sleep(5)
+            # Sonuç kutusunun gelmesini bekle
+            page.wait_for_selector('.download-items, .download-box', timeout=30000)
+            time.sleep(7) # Linklerin tamamen oluşması için biraz daha süre
             
-            # Sadece video (.mp4) ve kaliteli resim linklerini yakala
-            items = page.locator('a[href*=".mp4"], a[href*="snapcdn.app"]').all()
+            # Video ve Resim linklerini beraber yakala
+            items = page.locator('a[href*=".mp4"], a[href*="snapcdn.app"], a[href*=".jpg"], a[href*=".webp"]').all()
             for item in items:
                 href = item.get_attribute("href")
                 if href and href not in arsiv and href not in linkler:
-                    # Bozuk linkleri (reklam vb) filtrele
+                    # Reklam linklerini filtrele
                     if "googlevideo" not in href and "doubleclick" not in href:
                         linkler.append(href)
-                        print(f"  ✅ Video linki yakalandı!")
+                        print(f"  ✅ İçerik linki bulundu!")
         except Exception:
-            print(f"  ⚠️ Şu an yeni hikaye bulunamadı veya site yanıt vermedi.")
+            print(f"  ⚠️ Şu an yeni içerik bulunamadı.")
         browser.close()
     return linkler
 
@@ -65,11 +64,21 @@ def dosya_indir(url, hedef_yol):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, stream=True, timeout=30)
-        # Sadece dosya boyutu 100KB'dan büyükse indir (Bozuk/küçük dosyaları engeller)
-        if resp.status_code == 200 and int(resp.headers.get('Content-Length', 0)) > 100000:
+        
+        # 🛡️ YENİ KONTROL:
+        # 1. Dosya boyutu 20KB'dan büyük olmalı (Gerçek storyler genelde 20KB-5MB arasıdır)
+        # 2. Dosya türü resim (image) veya video olmalı
+        content_length = int(resp.headers.get('Content-Length', 0))
+        content_type = resp.headers.get('Content-Type', '').lower()
+        
+        is_valid_type = 'image' in content_type or 'video' in content_type
+        
+        if resp.status_code == 200 and content_length > 20000 and is_valid_type:
             with open(hedef_yol, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
             return True
+        else:
+            print(f"  🚫 Geçersiz dosya atlandı (Boyut: {content_length} bytes, Tür: {content_type})")
     except: return False
     return False
 
@@ -86,7 +95,7 @@ def drive_yukle(service, dosya_yolu, klasor_id):
     meta = {"name": ad, "parents": [klasor_id]}
     media = MediaFileUpload(dosya_yolu, resumable=True)
     service.files().create(body=meta, media_body=media).execute()
-    print(f"  ☁️ Drive'a gönderildi: {ad}")
+    print(f"  ☁️ Drive'a (2TB) gönderildi: {ad}")
 
 if __name__ == "__main__":
     kurulum()
@@ -96,7 +105,10 @@ if __name__ == "__main__":
         os.makedirs(hesap, exist_ok=True)
         linkler = fastdl_indir(hesap, arsiv)
         for i, link in enumerate(linkler):
-            dosya_adi = f"{hesap}/{hesap}_{int(time.time())}_{i}.mp4"
+            # Uzantıyı linkten anlamaya çalış, yoksa varsayılan mp4 yap
+            ext = "jpg" if ".jpg" in link or ".webp" in link else "mp4"
+            dosya_adi = f"{hesap}/{hesap}_{int(time.time())}_{i}.{ext}"
+            
             if dosya_indir(link, dosya_adi):
                 drive_yukle(service, dosya_adi, DRIVE_KLASOR_ID)
                 arsiv.append(link)
