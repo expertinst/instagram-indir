@@ -1,7 +1,7 @@
 import os, sys, subprocess, json, time, requests
 
 # AYARLAR
-HESAPLAR = ["motive2m", "zeynep.okktay"]
+HESAPLAR = ["motive2m", "zeynep.okktay"] 
 DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 
@@ -13,51 +13,43 @@ def get_links(hesap, arsiv):
     from playwright.sync_api import sync_playwright
     linkler = []
     target = f"https://www.instagram.com/stories/{hesap}/"
-    sites = ["https://fastdl.dev/", "https://saveig.app/"]
+    # DNS hatalarını aşmak için yedekli liste
+    sites = ["https://saveig.app/en/instagram-story-downloader", "https://fastdl.dev/"]
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = context.new_page()
         
-        # 🛡️ REKLAM ENGELLEYİCİ: Gereksiz tüm istekleri blokluyoruz
-        def block_ads(route):
-            ad_domains = ["doubleclick", "google-analytics", "facebook", "amazon-adsystem", "adnxs", "popads", "adsterra"]
-            if any(domain in route.request.url for domain in ad_domains) or route.request.resource_type in ["image", "stylesheet", "font"]:
-                route.abort()
-            else:
-                route.continue_()
-
-        page.route("**/*", block_ads)
+        # 🛡️ Reklam Engelleme: Sayfanın hızlı açılmasını ve butonların görünmesini sağlar
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["doubleclick", "google-analytics", "ads"]) else route.continue_())
 
         for site in sites:
             try:
                 print(f"🔍 {site} üzerinden @{hesap} taranıyor...")
-                page.goto(site, wait_until="domcontentloaded", timeout=60000)
+                page.goto(site, timeout=60000, wait_until="domcontentloaded")
                 
-                # Link kutusunu bul ve doldur
-                box = page.locator('input[name="url"], input[id*="url"]').first
+                # Her türlü kutucuğu bulabilen esnek bulucu
+                box = page.locator('input[id*="url"], input[name="url"], input[placeholder*="Instagram"]').first
                 box.wait_for(timeout=20000)
                 box.fill(target)
                 page.keyboard.press("Enter")
                 
-                # İndirme kutusunun gelmesini bekle (Reklamlar engellendiği için daha temiz gelecek)
-                page.wait_for_selector('a[href*="mp4"], a[href*="token="], .download-items', timeout=40000)
-                time.sleep(10)
+                # Butonun oluşması için inatla bekle
+                page.wait_for_selector('a[href*="mp4"], a[href*="token="], .download-items', timeout=45000)
+                time.sleep(12)
                 
-                # Gerçek video ve resim linklerini yakala
-                items = page.locator('a[href*="mp4"], a[href*="token="], a[href*=".jpg"]').all()
-                for item in items:
-                    href = item.get_attribute("href")
+                anchors = page.locator('a[href*="mp4"], a[href*="token="], a[href*=".jpg"]').all()
+                for a in anchors:
+                    href = a.get_attribute("href")
                     if href and href not in arsiv and href not in linkler:
-                        # Son bir kontrol: Gerçekten Instagram tabanlı bir indirme linki mi?
-                        if "googlevideo" not in href and "googlead" not in href:
+                        if "googlevideo" not in href: # Reklam videolarını ele
                             linkler.append(href)
                 
                 if linkler: 
-                    print(f"✅ {len(linkler)} yeni içerik bulundu.")
+                    print(f"✅ {len(linkler)} yeni içerik yakalandı.")
                     break 
-            except Exception:
+            except:
                 continue
         browser.close()
     return linkler
@@ -65,7 +57,7 @@ def get_links(hesap, arsiv):
 def dosya_indir(url, yol):
     try:
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, stream=True, timeout=60)
-        # 20KB altı dosyalar genelde bozuktur, onları atla
+        # 20KB altı bozuk dosyaları eler
         if resp.status_code == 200 and int(resp.headers.get('Content-Length', 0)) > 20000:
             with open(yol, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
@@ -84,12 +76,7 @@ def drive_yukle(yol, klasor_id):
 
 if __name__ == "__main__":
     kurulum()
-    # Arşivi yükle (Yoksa oluştur)
-    if os.path.exists(ARSIV_DOSYA):
-        with open(ARSIV_DOSYA, "r") as f: arsiv = json.load(f)
-    else:
-        arsiv = []
-
+    arsiv = json.load(open(ARSIV_DOSYA)) if os.path.exists(ARSIV_DOSYA) else []
     for hesap in HESAPLAR:
         os.makedirs(hesap, exist_ok=True)
         found = get_links(hesap, arsiv)
@@ -98,7 +85,7 @@ if __name__ == "__main__":
             if dosya_indir(link, yol):
                 drive_yukle(yol, DRIVE_KLASOR_ID)
                 arsiv.append(link)
-                print(f"☁️ Drive'a yüklendi: {yol}")
+                print(f"☁️ 2TB Drive'a yüklendi: {yol}")
                 if os.path.exists(yol): os.remove(yol)
-    
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
+    print("🎉 İşlem başarıyla bitti.")
