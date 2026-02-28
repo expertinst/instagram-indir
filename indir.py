@@ -47,42 +47,28 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        # 🛡️ BOT GİZLEME VE ANTİ-CLOUDFLARE AYARLARI
-        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080}
-        )
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = context.new_page()
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics", "tracker"]) else route.continue_())
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
         
         try:
             print(f"🔍 Taranıyor: @{hesap}")
-            
-            # Daha stabil siteye geçiş
-            page.goto("https://snapinsta.app/", wait_until="domcontentloaded", timeout=45000)
-            
-            # Kutuyu daha esnek bir seçiciyle bul (id=url, name=url veya type=text)
-            box = page.locator('input[id="url"], input[name="url"], input[type="text"]').first
-            box.wait_for(timeout=15000)
-            box.fill(target)
+            # ESKİ ÇALIŞAN FASTDL SİSTEMİ
+            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
+            page.fill('input[name="url"]', target)
             page.keyboard.press("Enter")
             
-            # İndirme butonlarının yüklenmesini bekle
-            page.wait_for_selector('.download-bottom a, a.btn-download, a[href*="dl="], a[href*="mp4"]', timeout=35000)
-            time.sleep(8)
+            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
+            time.sleep(10)
             
-            # Gelen tüm butonların linklerini topla
-            anchors = page.locator('a.btn-download, a[href*="dl="], a[href*="mp4"], a.download-bottom').all()
+            anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
             for a in anchors:
                 href = a.get_attribute("href")
-                # Link geçerli mi ve daha önce indirilmiş mi kontrol et
-                if href and ("instagram" in href or "mp4" in href or "dl=" in href):
-                    if href not in arsiv and "googlevideo" not in href:
-                        linkler.append(href)
+                if href and href not in arsiv and "googlevideo" not in href:
+                    linkler.append(href)
         except Exception as e:
-            # Sadece hata özetini yazdır, kirlilik yapmasın
-            print(f"⚠️ @{hesap} BULUNAMADI. Kısmi Hata: {str(e).splitlines()[0]}")
+            print(f"⚠️ @{hesap} BULUNAMADI. Hata: {str(e).splitlines()[0]}")
         
         browser.close()
     return linkler
@@ -97,10 +83,10 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    # IP BAN ÖNLEMİ: Gruplar arasında saniye farkı koyarak saldırı şüphesini yok ediyoruz
-    bekleme_suresi = grup_no * 15
+    # ⏳ HAYATİ ÖNLEM: FastDL botları engellemesin diye her gruba farklı bekleme süresi
+    bekleme_suresi = grup_no * 30 
     if bekleme_suresi > 0:
-        print(f"⏳ Bot koruması atlatılıyor, {bekleme_suresi} saniye bekleniyor...")
+        print(f"⏳ FastDL engeli yememek için {bekleme_suresi} saniye bekleniyor...")
         time.sleep(bekleme_suresi)
 
     kurulum()
@@ -121,9 +107,6 @@ if __name__ == "__main__":
         target_folder = get_drive_folder_id(service, DRIVE_KLASOR_ID, hesap)
         found = get_links(hesap, arsiv)
         
-        if not found:
-            continue
-            
         for i, link in enumerate(found):
             ext = "mp4" if "mp4" in link or "video" in link else "jpg"
             yol = f"{hesap}/{hesap}_{int(time.time())}_{i}.{ext}"
@@ -139,10 +122,13 @@ if __name__ == "__main__":
                         arsiv.append(link)
                         print(f"✅ Klasöre Yüklendi: {yol}")
                     else:
-                        print(f"🚫 Dosya çok küçük (Bozuk), atlandı: {yol}")
+                        print(f"🚫 Bozuk dosya atlandı: {yol}")
                 
                 if os.path.exists(yol): os.remove(yol)
             except Exception as e:
-                print(f"❌ İndirme başarısız: {e}")
+                print(f"❌ İndirme hatası: {e}")
+        
+        # ⏳ DİĞER ÖNLEM: Her hesaptan sonra 15 saniye bekle ki site bizi spam sanmasın
+        time.sleep(15)
                 
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
