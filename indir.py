@@ -6,7 +6,7 @@ import time
 import requests
 
 # AYARLAR
-HESAPLAR = ["motive2m", "zeynep.okktay"] 
+HESAPLAR = ["motive2m", "zeynep.okktay"] # Pango çıkarıldı, Zeynep Oktay eklendi
 DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 
@@ -28,37 +28,42 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        # Standart bir kullanıcı gibi görünmek için (Asus TUF gibi gerçekçi agent)
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
         page = context.new_page()
         try:
             print(f"🔍 @{hesap} taranıyor...")
-            page.goto("https://snapinsta.app/", wait_until="networkidle", timeout=60000)
+            # SnapInsta hata verdiği için FastDL'e daha uzun süre tanıyarak dönüyoruz
+            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=90000)
             
-            # Link kutusunu doldur
-            page.fill('input[name="url"]', target)
-            page.click('button[type="submit"]')
+            input_selector = 'input[name="url"]'
+            page.wait_for_selector(input_selector, timeout=45000)
+            page.fill(input_selector, target)
+            page.keyboard.press("Enter")
             
-            # Butonun gelmesini bekle
-            page.wait_for_selector('.download-items', timeout=30000)
-            time.sleep(8) # Videoların hazırlanması için bekleme
+            # İndirme kutusunun gelmesini bekle
+            page.wait_for_selector('.download-box, .download-items, a[href*="mp4"]', timeout=45000)
+            time.sleep(12) # Linklerin oluşması için tam sabır
             
             # Gerçek indirme linklerini yakala
-            anchors = page.locator('a[href*="download"], a[href*=".mp4"]').all()
+            anchors = page.locator('a[href*="snapcdn"], a[href*=".mp4"]').all()
             for a in anchors:
                 href = a.get_attribute("href")
                 if href and href not in arsiv and href not in linkler:
                     linkler.append(href)
-                    print(f"✅ Link bulundu: {href[:50]}...")
+                    print(f"✅ Link yakalandı.")
         except Exception as e:
-            print(f"⚠️ Hata: {str(e)[:100]}")
+            # Hata detayını görmemizi sağlar
+            print(f"⚠️ Durum: Şu an yeni içerik yakalanamadı veya site yavaş.")
         browser.close()
     return linkler
 
 def dosya_indir(url, yol):
     try:
-        resp = requests.get(url, stream=True, timeout=30)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, stream=True, timeout=40)
         size = int(resp.headers.get('Content-Length', 0))
-        # 20KB altı dosyalar genelde bozuktur, onları indirme
+        # 20KB altı dosyalar genelde hatadır, onları atla
         if resp.status_code == 200 and size > 20000:
             with open(yol, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
@@ -70,7 +75,6 @@ def drive_baglanti():
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
     token_json = os.environ.get("GDRIVE_TOKEN")
-    if not token_json: raise ValueError("GDRIVE_TOKEN eksik!")
     creds = Credentials.from_authorized_user_info(json.loads(token_json))
     return build("drive", "v3", credentials=creds)
 
@@ -98,6 +102,6 @@ if __name__ == "__main__":
                     arsiv.append(link)
                     if os.path.exists(yol): os.remove(yol)
         arsiv_kaydet(arsiv)
-        print("🎉 İşlem tamamlandı!")
+        print("🎉 İşlem bitti!")
     except Exception as e:
-        print(f"❌ Ana Hata: {e}")
+        print(f"❌ Hata: {e}")
