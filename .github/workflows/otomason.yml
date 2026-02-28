@@ -2,7 +2,7 @@ name: Instagram Otomasyon
 
 on:
   schedule:
-    - cron: '*/10 * * * *' # 10 dakikada bir çalışacak, tam istediğin gibi.
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -18,16 +18,15 @@ jobs:
           python-version: '3.11'
       - name: Calistir
         env:
-          # BURASI DEĞİŞTİ: Artık senin 2TB'lık hesabının anahtarını kullanıyoruz.
           GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
         run: |
           pip install playwright requests google-api-python-client google-auth -q
           playwright install chromium
           playwright install-deps chromium
           python indir.py
-      - name: Arsivi kaydet
+      - name: Kaydet
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add arsiv.json
-          git diff --staged --quiet || (git commit -m "arsiv guncellendi" && git push)
+          git diff --staged --quiet || (git commit -m "update" && git push)
