@@ -1,7 +1,6 @@
 import os, sys, subprocess, json, time, requests
 
 # ══════════════════════════════════════════════════════════════════════════
-# 113 HESAPLIK TAM LİSTE
 TUM_HESAPLAR = [
     "dogacakr", "minasolakk", "suedaauluca", "zeybik", "pynarlidia",
     "g.unes", "motive2m", "bluvrts", "esyundo", "lvbelc5",
@@ -54,13 +53,12 @@ def get_links(hesap, arsiv):
         
         try:
             print(f"🔍 Taranıyor: @{hesap}")
-            # Sadece stabil çalışan siteyi kullanıyoruz
             page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
             page.fill('input[name="url"]', target)
             page.keyboard.press("Enter")
             
-            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=35000)
-            time.sleep(8)
+            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=40000)
+            time.sleep(10)
             
             anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
             for a in anchors:
@@ -68,7 +66,8 @@ def get_links(hesap, arsiv):
                 if href and href not in arsiv and "googlevideo" not in href:
                     linkler.append(href)
         except Exception as e:
-            print(f"⚠️ @{hesap} bulunamadı veya süre doldu.")
+            # Hata mesajını artık gizlemiyoruz, doğrudan loga yazdırıyoruz
+            print(f"⚠️ @{hesap} BULUNAMADI. HATA DETAYI: {str(e)[:150]}")
         
         browser.close()
     return linkler
@@ -81,6 +80,14 @@ def grup_ayir(liste, toplam_grup):
     return liste[bas:] if grup_no == (toplam_grup - 1) else liste[bas : bas + parca]
 
 if __name__ == "__main__":
+    grup_no = int(os.environ.get("GRUP_NO", 0))
+    
+    # 🛡️ IP BAN ÖNLEMİ: Botlar aynı anda siteye saldırmasın diye sırayla bekletiyoruz
+    bekleme_suresi = grup_no * 15
+    if bekleme_suresi > 0:
+        print(f"⏳ IP engeli yememek için {bekleme_suresi} saniye bekleniyor...")
+        time.sleep(bekleme_suresi)
+
     kurulum()
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
@@ -90,7 +97,7 @@ if __name__ == "__main__":
     service = build("drive", "v3", credentials=creds)
     
     HESAPLAR = grup_ayir(TUM_HESAPLAR, 10)
-    print(f"🚀 GRUP {os.environ.get('GRUP_NO')} BAŞLADI: {HESAPLAR}")
+    print(f"🚀 GRUP {grup_no} BAŞLADI: {HESAPLAR}")
     
     arsiv = json.load(open(ARSIV_DOSYA)) if os.path.exists(ARSIV_DOSYA) else []
     
@@ -107,15 +114,12 @@ if __name__ == "__main__":
             yol = f"{hesap}/{hesap}_{int(time.time())}_{i}.{ext}"
             
             try:
-                # Videoyu önce GitHub sunucusuna indiriyoruz
                 resp = requests.get(link, stream=True, timeout=60)
                 if resp.status_code == 200:
                     with open(yol, "wb") as f:
                         for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
                     
-                    # DOĞRULAMA: Dosya gerçekten var mı ve 20KB'dan büyük mü?
                     if os.path.getsize(yol) > 20000:
-                        # Drive'da ilgili hesabın klasörüne atıyoruz
                         service.files().create(body={'name': os.path.basename(yol), 'parents': [target_folder]}, media_body=MediaFileUpload(yol, resumable=True)).execute()
                         arsiv.append(link)
                         print(f"✅ Klasöre Yüklendi: {yol}")
