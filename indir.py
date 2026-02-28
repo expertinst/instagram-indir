@@ -6,7 +6,7 @@ import time
 import requests
 
 # AYARLAR
-HESAPLAR = ["motive2m", "nerdesinpango"] 
+HESAPLAR = ["motive2m", "zeynep.okktay"] 
 DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 
