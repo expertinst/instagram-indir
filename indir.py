@@ -47,27 +47,42 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
+        # 🛡️ BOT GİZLEME VE ANTİ-CLOUDFLARE AYARLARI
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080}
+        )
+        page = context.new_page()
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics", "tracker"]) else route.continue_())
         
         try:
             print(f"🔍 Taranıyor: @{hesap}")
-            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
-            page.fill('input[name="url"]', target)
+            
+            # Daha stabil siteye geçiş
+            page.goto("https://snapinsta.app/", wait_until="domcontentloaded", timeout=45000)
+            
+            # Kutuyu daha esnek bir seçiciyle bul (id=url, name=url veya type=text)
+            box = page.locator('input[id="url"], input[name="url"], input[type="text"]').first
+            box.wait_for(timeout=15000)
+            box.fill(target)
             page.keyboard.press("Enter")
             
-            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=40000)
-            time.sleep(10)
+            # İndirme butonlarının yüklenmesini bekle
+            page.wait_for_selector('.download-bottom a, a.btn-download, a[href*="dl="], a[href*="mp4"]', timeout=35000)
+            time.sleep(8)
             
-            anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
+            # Gelen tüm butonların linklerini topla
+            anchors = page.locator('a.btn-download, a[href*="dl="], a[href*="mp4"], a.download-bottom').all()
             for a in anchors:
                 href = a.get_attribute("href")
-                if href and href not in arsiv and "googlevideo" not in href:
-                    linkler.append(href)
+                # Link geçerli mi ve daha önce indirilmiş mi kontrol et
+                if href and ("instagram" in href or "mp4" in href or "dl=" in href):
+                    if href not in arsiv and "googlevideo" not in href:
+                        linkler.append(href)
         except Exception as e:
-            # Hata mesajını artık gizlemiyoruz, doğrudan loga yazdırıyoruz
-            print(f"⚠️ @{hesap} BULUNAMADI. HATA DETAYI: {str(e)[:150]}")
+            # Sadece hata özetini yazdır, kirlilik yapmasın
+            print(f"⚠️ @{hesap} BULUNAMADI. Kısmi Hata: {str(e).splitlines()[0]}")
         
         browser.close()
     return linkler
@@ -82,10 +97,10 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    # 🛡️ IP BAN ÖNLEMİ: Botlar aynı anda siteye saldırmasın diye sırayla bekletiyoruz
+    # IP BAN ÖNLEMİ: Gruplar arasında saniye farkı koyarak saldırı şüphesini yok ediyoruz
     bekleme_suresi = grup_no * 15
     if bekleme_suresi > 0:
-        print(f"⏳ IP engeli yememek için {bekleme_suresi} saniye bekleniyor...")
+        print(f"⏳ Bot koruması atlatılıyor, {bekleme_suresi} saniye bekleniyor...")
         time.sleep(bekleme_suresi)
 
     kurulum()
@@ -124,10 +139,10 @@ if __name__ == "__main__":
                         arsiv.append(link)
                         print(f"✅ Klasöre Yüklendi: {yol}")
                     else:
-                        print(f"🚫 Bozuk dosya atlandı: {yol}")
+                        print(f"🚫 Dosya çok küçük (Bozuk), atlandı: {yol}")
                 
                 if os.path.exists(yol): os.remove(yol)
             except Exception as e:
-                print(f"❌ İndirme hatası: {e}")
+                print(f"❌ İndirme başarısız: {e}")
                 
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
