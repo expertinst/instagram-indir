@@ -5,7 +5,8 @@ import json
 import time
 import requests
 
-HESAPLAR = ["motive2m", "nerdesinpango"]
+# AYARLAR
+HESAPLAR = ["motive2m", "nerdesinpango"] 
 DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 
@@ -30,17 +31,26 @@ def get_links(hesap, arsiv):
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = context.new_page()
         try:
+            print(f"🔍 @{hesap} taranıyor...")
             page.goto("https://snapinsta.app/", wait_until="networkidle", timeout=60000)
+            
+            # Link kutusunu doldur
             page.fill('input[name="url"]', target)
             page.click('button[type="submit"]')
+            
+            # Butonun gelmesini bekle
             page.wait_for_selector('.download-items', timeout=30000)
-            time.sleep(5)
+            time.sleep(8) # Videoların hazırlanması için bekleme
+            
+            # Gerçek indirme linklerini yakala
             anchors = page.locator('a[href*="download"], a[href*=".mp4"]').all()
             for a in anchors:
                 href = a.get_attribute("href")
                 if href and href not in arsiv and href not in linkler:
                     linkler.append(href)
-        except: pass
+                    print(f"✅ Link bulundu: {href[:50]}...")
+        except Exception as e:
+            print(f"⚠️ Hata: {str(e)[:100]}")
         browser.close()
     return linkler
 
@@ -48,6 +58,7 @@ def dosya_indir(url, yol):
     try:
         resp = requests.get(url, stream=True, timeout=30)
         size = int(resp.headers.get('Content-Length', 0))
+        # 20KB altı dosyalar genelde bozuktur, onları indirme
         if resp.status_code == 200 and size > 20000:
             with open(yol, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
@@ -58,8 +69,9 @@ def dosya_indir(url, yol):
 def drive_baglanti():
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
-    token_data = json.loads(os.environ.get("GDRIVE_TOKEN"))
-    creds = Credentials.from_authorized_user_info(token_data)
+    token_json = os.environ.get("GDRIVE_TOKEN")
+    if not token_json: raise ValueError("GDRIVE_TOKEN eksik!")
+    creds = Credentials.from_authorized_user_info(json.loads(token_json))
     return build("drive", "v3", credentials=creds)
 
 def drive_yukle(service, yol, klasor_id):
@@ -68,19 +80,24 @@ def drive_yukle(service, yol, klasor_id):
     meta = {"name": ad, "parents": [klasor_id]}
     media = MediaFileUpload(yol, resumable=True)
     service.files().create(body=meta, media_body=media).execute()
+    print(f"☁️ Drive'a yüklendi: {ad}")
 
 if __name__ == "__main__":
     kurulum()
-    service = drive_baglanti()
-    arsiv = arsiv_oku()
-    for hesap in HESAPLAR:
-        os.makedirs(hesap, exist_ok=True)
-        linkler = get_links(hesap, arsiv)
-        for i, link in enumerate(linkler):
-            ext = "mp4" if "video" in link or "mp4" in link else "jpg"
-            yol = f"{hesap}/{int(time.time())}_{i}.{ext}"
-            if dosya_indir(link, yol):
-                drive_yukle(service, yol, DRIVE_KLASOR_ID)
-                arsiv.append(link)
-                if os.path.exists(yol): os.remove(yol)
-    arsiv_kaydet(arsiv)
+    try:
+        service = drive_baglanti()
+        arsiv = arsiv_oku()
+        for hesap in HESAPLAR:
+            os.makedirs(hesap, exist_ok=True)
+            linkler = get_links(hesap, arsiv)
+            for i, link in enumerate(linkler):
+                ext = "mp4" if "video" in link or "mp4" in link else "jpg"
+                yol = f"{hesap}/{int(time.time())}_{i}.{ext}"
+                if dosya_indir(link, yol):
+                    drive_yukle(service, yol, DRIVE_KLASOR_ID)
+                    arsiv.append(link)
+                    if os.path.exists(yol): os.remove(yol)
+        arsiv_kaydet(arsiv)
+        print("🎉 İşlem tamamlandı!")
+    except Exception as e:
+        print(f"❌ Ana Hata: {e}")
