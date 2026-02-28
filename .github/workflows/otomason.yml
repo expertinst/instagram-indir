@@ -1,13 +1,10 @@
 name: Instagram Otomasyon
-
 on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   indir:
     runs-on: ubuntu-latest
@@ -16,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - name: Calistir
+      - name: Baslat
         env:
           GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
         run: |
@@ -24,7 +21,7 @@ jobs:
           playwright install chromium
           playwright install-deps chromium
           python indir.py
-      - name: Kaydet
+      - name: Arsivle
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
