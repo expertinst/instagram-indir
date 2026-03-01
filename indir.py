@@ -30,28 +30,21 @@ TUM_HESAPLAR = [
 
 DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
+INDEX_DOSYA = "kaldigimiz_yer.txt"
 
 def kurulum():
     subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "google-api-python-client", "google-auth", "requests", "-q"])
     subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
 def get_drive_folder_id(service, parent_id, folder_name):
-    # Drive içinde bu hesap adında bir klasör var mı kontrol et
     query = f"name = '{folder_name}' and '{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     results = service.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    
     if items:
         return items[0]['id']
     else:
-        # Klasör yoksa oluştur
-        file_metadata = {
-            'name': folder_name,
-            'parents': [parent_id],
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
+        file_metadata = {'name': folder_name, 'parents': [parent_id], 'mimeType': 'application/vnd.google-apps.folder'}
         folder = service.files().create(body=file_metadata, fields='id').execute()
-        print(f"📂 Yeni klasör oluşturuldu: {folder_name}")
         return folder.get('id')
 
 def get_links(hesap, arsiv):
@@ -63,8 +56,6 @@ def get_links(hesap, arsiv):
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = context.new_page()
-        
-        # Reklamları engelle
         page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick"]) else route.continue_())
 
         try:
@@ -73,16 +64,13 @@ def get_links(hesap, arsiv):
             page.fill('input[name="url"]', target)
             page.keyboard.press("Enter")
             
-            # Linklerin oluşmasını bekle
             page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
             time.sleep(12) 
             
-            # SES SORUNU İÇİN: Sadece gerçek indirme linklerini yakala
             anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
             for a in anchors:
                 href = a.get_attribute("href")
                 if href and href not in arsiv and href not in linkler:
-                    # 'googlevideo' gibi sessiz önizleme linklerini atla
                     if "googlevideo" not in href:
                         linkler.append(href)
         except Exception as e:
@@ -94,7 +82,6 @@ def get_links(hesap, arsiv):
 def drive_yukle(service, yol, target_folder_id):
     from googleapiclient.http import MediaFileUpload
     ad = os.path.basename(yol)
-    # 🛡️ KLASÖR ÇÖZÜMÜ: 'parents' parametresi ile dosyanın tam olarak hedefe gitmesi garantilendi
     meta = {"name": ad, "parents": [target_folder_id]} 
     media = MediaFileUpload(yol, resumable=True)
     service.files().create(body=meta, media_body=media).execute()
@@ -104,17 +91,26 @@ if __name__ == "__main__":
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
     
-    # Drive bağlantısını bir kez kur
+    # Nerede kaldığımızı oku
+    try:
+        with open(INDEX_DOSYA, "r") as f:
+            baslangic = int(f.read().strip())
+    except:
+        baslangic = 0
+
+    # Sadece 5 hesap al
+    bitis = baslangic + 5
+    islem_gorecekler = TUM_HESAPLAR[baslangic:bitis]
+    
+    print(f"🚀 Otomasyon Başladı! (Sıra: {baslangic} ile {bitis} arası)")
+
     creds = Credentials.from_authorized_user_info(json.loads(os.environ.get("GDRIVE_TOKEN")))
     service = build("drive", "v3", credentials=creds)
     
     arsiv = json.load(open(ARSIV_DOSYA)) if os.path.exists(ARSIV_DOSYA) else []
     
-    print("🚀 Otomasyon Başladı (FastDL Altyapısı - 113 Hesap)")
-    
-    for hesap in TUM_HESAPLAR:
+    for hesap in islem_gorecekler:
         os.makedirs(hesap, exist_ok=True)
-        # 📂 Hesap için klasör ID'sini al veya oluştur
         target_folder = get_drive_folder_id(service, DRIVE_KLASOR_ID, hesap)
         
         found = get_links(hesap, arsiv)
@@ -135,7 +131,11 @@ if __name__ == "__main__":
             except Exception as e: 
                 print(f"❌ İndirme hatası: {e}")
                 
-        # FastDL sitesinin bizi bot olarak algılamaması için her hesaptan sonra kısa bir bekleme
-        time.sleep(10)
+        time.sleep(5)
             
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
+    
+    # Yeni index'i kaydet (Listenin sonuna gelirse başa dön)
+    yeni_baslangic = bitis if bitis < len(TUM_HESAPLAR) else 0
+    with open(INDEX_DOSYA, "w") as f: f.write(str(yeni_baslangic))
+    print(f"🛑 İşlem bitti. Bir sonraki turda {yeni_baslangic}. sıradan devam edilecek.")
