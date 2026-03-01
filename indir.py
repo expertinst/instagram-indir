@@ -33,8 +33,7 @@ ARSIV_DOSYA = "arsiv.json"
 INDEX_DOSYA = "kaldigimiz_yer.txt"
 
 def kurulum():
-    # Hayalet Modu eklentisini (playwright-stealth) kuruyoruz
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "playwright-stealth", "google-api-python-client", "google-auth", "requests", "-q"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "google-api-python-client", "google-auth", "requests", "-q"])
     subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
 def get_drive_folder_id(service, parent_id, folder_name):
@@ -50,32 +49,39 @@ def get_drive_folder_id(service, parent_id, folder_name):
 
 def get_links(hesap, arsiv):
     from playwright.sync_api import sync_playwright
-    from playwright_stealth import stealth_sync
     linkler = []
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        # Bot kimliğini silen çekirdek ayarlar
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
         )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080}
+        )
+        
+        # 🛡️ YERLEŞİK HAYALET MODU (Manuel Enjeksiyon)
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         page = context.new_page()
-        
-        # 🛡️ HAYALET MODU AKTİF EDİLİYOR
-        stealth_sync(page)
-        
         page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
 
         try:
             print(f"🔍 {hesap} taranıyor...")
             page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
             
+            # Cloudflare arka plan doğrulaması için insani bir bekleme
+            time.sleep(3)
+            
             box = page.locator('input[name="url"]')
             box.wait_for(timeout=20000)
             box.fill(target)
             page.keyboard.press("Enter")
             
-            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
+            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=40000)
             time.sleep(12) 
             
             anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
@@ -84,8 +90,9 @@ def get_links(hesap, arsiv):
                 if href and href not in arsiv and href not in linkler:
                     if "googlevideo" not in href:
                         linkler.append(href)
+                        
         except Exception as e:
-            # Artık hatayı gizlemiyoruz, site bizi engellerse sebebi tam olarak burada yazacak
+            # GERÇEK HATAYI YAZDIR (Gizlemiyoruz)
             print(f"⚠️ @{hesap} BULUNAMADI. SEBEP: {str(e).splitlines()[0]}")
         
         browser.close()
