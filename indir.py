@@ -47,22 +47,27 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         page = context.new_page()
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick"]) else route.continue_())
         
         try:
             print(f"🔍 Taranıyor: @{hesap}")
-            # ESKİ ÇALIŞAN FASTDL SİSTEMİ
-            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
-            page.fill('input[name="url"]', target)
+            
+            # GÜNCEL ÇALIŞAN SİTE
+            page.goto("https://www.save-insta.com/story-downloader/", wait_until="domcontentloaded", timeout=60000)
+            
+            # Kutuya hesap adını veya linkini yaz
+            page.fill('input[name="q"], input[id="photo"]', target)
             page.keyboard.press("Enter")
             
-            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
-            time.sleep(10)
+            # İndirme butonlarının olduğu bölümün yüklenmesini bekle
+            page.wait_for_selector('.box-download, a.button[href*="dl="], a.button[download]', timeout=45000)
+            time.sleep(8)
             
-            anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
+            # Linkleri topla
+            anchors = page.locator('a.button[href*="dl="], a.button[download], a.btn-download').all()
             for a in anchors:
                 href = a.get_attribute("href")
                 if href and href not in arsiv and "googlevideo" not in href:
@@ -83,10 +88,9 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    # ⏳ HAYATİ ÖNLEM: FastDL botları engellemesin diye her gruba farklı bekleme süresi
-    bekleme_suresi = grup_no * 30 
+    # ⏳ SİTEYİ ÇÖKERTME ÖNLEMİ (MATRIX İÇİN)
+    bekleme_suresi = grup_no * 10 
     if bekleme_suresi > 0:
-        print(f"⏳ FastDL engeli yememek için {bekleme_suresi} saniye bekleniyor...")
         time.sleep(bekleme_suresi)
 
     kurulum()
@@ -127,8 +131,5 @@ if __name__ == "__main__":
                 if os.path.exists(yol): os.remove(yol)
             except Exception as e:
                 print(f"❌ İndirme hatası: {e}")
-        
-        # ⏳ DİĞER ÖNLEM: Her hesaptan sonra 15 saniye bekle ki site bizi spam sanmasın
-        time.sleep(15)
                 
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
