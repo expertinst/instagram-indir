@@ -47,55 +47,70 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True, 
-            args=["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
-        )
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080}
         )
         context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
         page = context.new_page()
         page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
         
-        try:
-            print(f"🔍 Taranıyor: @{hesap}")
-            
-            # GÜNCEL VE ÇALIŞAN SİTE: SaveIG
-            page.goto("https://saveig.app/en/instagram-story-downloader", wait_until="domcontentloaded", timeout=60000)
-            time.sleep(random.uniform(1.0, 3.0))
-            
-            box = page.locator('input[id="s_input"], input[name="q"]').first
-            box.wait_for(timeout=20000)
-            box.click()
-            time.sleep(random.uniform(0.5, 1.0))
-            
-            box.press_sequentially(target, delay=random.randint(30, 80))
-            time.sleep(random.uniform(0.5, 1.0))
-            
-            # Ara butonuna tıkla
-            submit_btn = page.locator('button[type="submit"], button.btn-primary').first
-            if submit_btn.is_visible():
-                submit_btn.click()
-            else:
-                page.keyboard.press("Enter")
-            
-            # İndirme sonuçlarının gelmesini bekle
-            page.wait_for_selector('.download-items a.btn-download, a[href*="dl="], a[href*="dir="]', timeout=45000)
-            time.sleep(random.uniform(4.0, 7.0))
-            
-            anchors = page.locator('.download-items a, a.btn-download, a[href*="dl="], a[href*="dir="]').all()
-            for a in anchors:
-                href = a.get_attribute("href")
-                if href and ("instagram" in href or "mp4" in href or "dl=" in href or "dir=" in href):
-                    if href not in arsiv and "googlevideo" not in href:
-                        linkler.append(href)
-                        
-        except Exception as e:
-            print(f"⚠️ @{hesap} BULUNAMADI. Hata: {str(e).splitlines()[0]}")
+        # YEDEKLEME SİSTEMİ: İki farklı siteyi sırayla dener
+        siteler = [
+            {
+                "isim": "InDown.io",
+                "url": "https://indown.io/instagram-story-download",
+                "kutu": 'input[name="link"], input[type="text"]',
+                "buton": 'button[type="submit"]',
+                "sonuc": 'a.btn-danger, a[download], a[href*="dl="]'
+            },
+            {
+                "isim": "SSSInstagram",
+                "url": "https://sssinstagram.com/story-saver",
+                "kutu": 'input[type="text"], input[name="id"]',
+                "buton": 'button[id="submit"], button[type="submit"]',
+                "sonuc": 'a.download-btn, a[href*="dl="], a[download]'
+            }
+        ]
         
+        print(f"🔍 Arıyor: @{hesap}")
+        
+        for site in siteler:
+            if linkler: break # Link bulduysa diğer siteyi aramayı bırak
+            
+            try:
+                page.goto(site["url"], wait_until="domcontentloaded", timeout=45000)
+                time.sleep(1)
+                
+                box = page.locator(site["kutu"]).first
+                box.wait_for(timeout=15000)
+                box.fill(target)
+                time.sleep(0.5)
+                
+                btn = page.locator(site["buton"]).first
+                if btn.is_visible():
+                    btn.click()
+                else:
+                    page.keyboard.press("Enter")
+                
+                # İndirme kutusunu bekle
+                page.wait_for_selector(site["sonuc"], timeout=35000)
+                time.sleep(5)
+                
+                anchors = page.locator(site["sonuc"]).all()
+                for a in anchors:
+                    href = a.get_attribute("href")
+                    if href and ("instagram" in href or "mp4" in href or "download" in href or "dl=" in href):
+                        if href not in arsiv and "googlevideo" not in href:
+                            linkler.append(href)
+                            
+                if linkler:
+                    print(f"⚡ Kaynak bulundu: {site['isim']}")
+                    
+            except Exception as e:
+                pass # Bu site patlarsa sessizce diğerine geç
+                
         browser.close()
     return linkler
 
@@ -109,8 +124,7 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    # MATRIX IP KALKANI
-    bekleme_suresi = grup_no * 15 
+    bekleme_suresi = grup_no * 10 
     if bekleme_suresi > 0:
         time.sleep(bekleme_suresi)
 
@@ -145,14 +159,12 @@ if __name__ == "__main__":
                     if os.path.getsize(yol) > 20000:
                         service.files().create(body={'name': os.path.basename(yol), 'parents': [target_folder]}, media_body=MediaFileUpload(yol, resumable=True)).execute()
                         arsiv.append(link)
-                        print(f"✅ Klasöre Yüklendi: {yol}")
+                        print(f"✅ Drive'a Yüklendi: {yol}")
                     else:
                         print(f"🚫 Bozuk dosya atlandı: {yol}")
                 
                 if os.path.exists(yol): os.remove(yol)
             except Exception as e:
                 print(f"❌ İndirme hatası: {e}")
-        
-        time.sleep(random.uniform(8.0, 15.0))
                 
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
