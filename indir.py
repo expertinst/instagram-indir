@@ -33,7 +33,8 @@ ARSIV_DOSYA = "arsiv.json"
 INDEX_DOSYA = "kaldigimiz_yer.txt"
 
 def kurulum():
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "google-api-python-client", "google-auth", "requests", "-q"])
+    # Hayalet Modu eklentisini (playwright-stealth) kuruyoruz
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "playwright-stealth", "google-api-python-client", "google-auth", "requests", "-q"])
     subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
 
 def get_drive_folder_id(service, parent_id, folder_name):
@@ -49,19 +50,29 @@ def get_drive_folder_id(service, parent_id, folder_name):
 
 def get_links(hesap, arsiv):
     from playwright.sync_api import sync_playwright
+    from playwright_stealth import stealth_sync
     linkler = []
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
         page = context.new_page()
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick"]) else route.continue_())
+        
+        # 🛡️ HAYALET MODU AKTİF EDİLİYOR
+        stealth_sync(page)
+        
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
 
         try:
             print(f"🔍 {hesap} taranıyor...")
             page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
-            page.fill('input[name="url"]', target)
+            
+            box = page.locator('input[name="url"]')
+            box.wait_for(timeout=20000)
+            box.fill(target)
             page.keyboard.press("Enter")
             
             page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
@@ -74,7 +85,8 @@ def get_links(hesap, arsiv):
                     if "googlevideo" not in href:
                         linkler.append(href)
         except Exception as e:
-            print(f"⚠️ @{hesap} bulunamadı veya şu an hikayesi yok.")
+            # Artık hatayı gizlemiyoruz, site bizi engellerse sebebi tam olarak burada yazacak
+            print(f"⚠️ @{hesap} BULUNAMADI. SEBEP: {str(e).splitlines()[0]}")
         
         browser.close()
     return linkler
@@ -91,14 +103,12 @@ if __name__ == "__main__":
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
     
-    # Nerede kaldığımızı oku
     try:
         with open(INDEX_DOSYA, "r") as f:
             baslangic = int(f.read().strip())
     except:
         baslangic = 0
 
-    # Sadece 5 hesap al
     bitis = baslangic + 5
     islem_gorecekler = TUM_HESAPLAR[baslangic:bitis]
     
@@ -135,7 +145,6 @@ if __name__ == "__main__":
             
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
     
-    # Yeni index'i kaydet (Listenin sonuna gelirse başa dön)
     yeni_baslangic = bitis if bitis < len(TUM_HESAPLAR) else 0
     with open(INDEX_DOSYA, "w") as f: f.write(str(yeni_baslangic))
     print(f"🛑 İşlem bitti. Bir sonraki turda {yeni_baslangic}. sıradan devam edilecek.")
