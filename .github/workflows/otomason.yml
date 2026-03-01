@@ -17,10 +17,11 @@ jobs:
         env:
           GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
         run: |
+          sudo apt-get install -y xvfb
           pip install playwright requests google-api-python-client google-auth -q
           playwright install chromium
           playwright install-deps chromium
-          python indir.py
+          xvfb-run --auto-servernum python indir.py
       - name: Arsivle
         run: |
           git config user.name "github-actions"
