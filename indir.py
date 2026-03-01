@@ -65,15 +65,19 @@ if __name__ == "__main__":
         print("❌ HATA: IG_SESSIONID bulunamadı!")
         sys.exit(1)
         
+    # 🛡️ ÇÖZÜM BURADA: Fiziksel Çerez (Cookie) dosyası yaratıyoruz
+    cookie_icerik = f"# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t3300000000\tsessionid\t{session_id}\n"
+    with open("cookies.txt", "w") as f:
+        f.write(cookie_icerik)
+        
     creds = Credentials.from_authorized_user_info(json.loads(os.environ.get("GDRIVE_TOKEN")))
     service = build("drive", "v3", credentials=creds)
     
     HESAPLAR = grup_ayir(TUM_HESAPLAR, 10)
-    print(f"🚀 GRUP {grup_no} BAŞLADI (Direct API Mode): {HESAPLAR}")
+    print(f"🚀 GRUP {grup_no} BAŞLADI (Cookie Auth Mode): {HESAPLAR}")
     
     arsiv = json.load(open(ARSIV_DOSYA)) if os.path.exists(ARSIV_DOSYA) else []
     
-    # yt-dlp'nin tekrarları atlaması için arşivi geçici dosyaya yazıyoruz
     with open("yt_archive.txt", "w") as f:
         for kayit in arsiv:
             f.write(f"instagram {kayit}\n")
@@ -85,12 +89,12 @@ if __name__ == "__main__":
         
         ydl_opts = {
             'outtmpl': f'{hesap}/%(id)s.%(ext)s',
-            'http_headers': {'Cookie': f'sessionid={session_id}'},
+            'cookiefile': 'cookies.txt', # 👈 Artık header yerine bu dosyayı kullanıyor
             'download_archive': 'yt_archive.txt',
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': True,
-            'sleep_requests': 1.5, # Sahte hesabın banlanmaması için nefes aralığı
+            'sleep_requests': 2.0, 
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -104,14 +108,13 @@ if __name__ == "__main__":
                 if os.path.getsize(yol) > 20000:
                     try:
                         service.files().create(body={'name': dosya, 'parents': [target_folder]}, media_body=MediaFileUpload(yol, resumable=True)).execute()
-                        print(f"✅ Klasöre Yüklendi: {dosya}")
+                        print(f"✅ Drive'a Yüklendi: {dosya}")
                     except Exception as e:
                         print(f"❌ Yükleme hatası: {e}")
                 os.remove(yol)
         
         time.sleep(3)
         
-    # Yeni indirilen videoların ID'lerini ana arşive kaydet
     if os.path.exists("yt_archive.txt"):
         with open("yt_archive.txt", "r") as f:
             for line in f:
@@ -121,3 +124,7 @@ if __name__ == "__main__":
                         arsiv.append(vid)
                         
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
+    
+    # Güvenlik için iş bitince çerez dosyasını sil
+    if os.path.exists("cookies.txt"):
+        os.remove("cookies.txt")
