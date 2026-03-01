@@ -1,7 +1,7 @@
 name: Instagram Otomasyon (Paralel)
 on:
   schedule:
-    - cron: '*/15 * * * *' # 15 minute check
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        grup: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] # 10 groups
+        grup: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -20,11 +20,9 @@ jobs:
       - name: Calistir
         env:
           GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
+          IG_SESSIONID: ${{ secrets.IG_SESSIONID }}
           GRUP_NO: ${{ matrix.grup }}
         run: |
-          pip install playwright requests google-api-python-client google-auth -q
-          playwright install chromium
-          playwright install-deps chromium
           python indir.py
       - name: Kaydet
         run: |
