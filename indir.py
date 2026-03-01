@@ -1,4 +1,4 @@
-import os, sys, subprocess, json, time, requests
+import os, sys, subprocess, json, time, requests, random
 
 # ══════════════════════════════════════════════════════════════════════════
 TUM_HESAPLAR = [
@@ -47,27 +47,56 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        # 1. Aşama: Tarayıcıyı bot özelliklerinden arındırarak başlat
+        browser = p.chromium.launch(
+            headless=True, 
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--window-size=1920,1080",
+                "--disable-infobars"
+            ]
+        )
+        
+        # 2. Aşama: Tamamen gerçek bir kullanıcı (User-Agent) profili çiz
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080}
+        )
+        
+        # 3. Aşama: EN KRİTİK KILIF (JavaScript ile bot damgasını sil)
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         page = context.new_page()
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick"]) else route.continue_())
+        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
         
         try:
             print(f"🔍 Taranıyor: @{hesap}")
             
-            # GÜNCEL ÇALIŞAN SİTE
-            page.goto("https://www.save-insta.com/story-downloader/", wait_until="domcontentloaded", timeout=60000)
+            # FastDL'ye gir
+            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
             
-            # Kutuya hesap adını veya linkini yaz
-            page.fill('input[name="q"], input[id="photo"]', target)
+            # Siteye girer girmez insan gibi biraz sayfayı izle
+            time.sleep(random.uniform(2.0, 4.0))
+            
+            box = page.locator('input[name="url"]')
+            box.wait_for(timeout=25000)
+            
+            # 4. Aşama: Kutunun üstüne git ve tıkla
+            box.click()
+            time.sleep(random.uniform(0.5, 1.5))
+            
+            # 5. Aşama: Kopyala-yapıştır yapma, insan gibi klavyeden tek tek yaz
+            box.press_sequentially(target, delay=random.randint(50, 150))
+            time.sleep(random.uniform(0.5, 1.5))
+            
             page.keyboard.press("Enter")
             
-            # İndirme butonlarının olduğu bölümün yüklenmesini bekle
-            page.wait_for_selector('.box-download, a.button[href*="dl="], a.button[download]', timeout=45000)
-            time.sleep(8)
+            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=45000)
             
-            # Linkleri topla
-            anchors = page.locator('a.button[href*="dl="], a.button[download], a.btn-download').all()
+            # Yükleme sonrası insan gibi bekle
+            time.sleep(random.uniform(8.0, 12.0))
+            
+            anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
             for a in anchors:
                 href = a.get_attribute("href")
                 if href and href not in arsiv and "googlevideo" not in href:
@@ -88,9 +117,10 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    # ⏳ SİTEYİ ÇÖKERTME ÖNLEMİ (MATRIX İÇİN)
-    bekleme_suresi = grup_no * 10 
+    # FastDL'nin toplu saldırı alarmını tetiklememek için sıkı Matrix aralığı
+    bekleme_suresi = grup_no * 20 
     if bekleme_suresi > 0:
+        print(f"⏳ Bot tespitine karşı {bekleme_suresi} saniye gizleniliyor...")
         time.sleep(bekleme_suresi)
 
     kurulum()
@@ -131,5 +161,8 @@ if __name__ == "__main__":
                 if os.path.exists(yol): os.remove(yol)
             except Exception as e:
                 print(f"❌ İndirme hatası: {e}")
+        
+        # Her hesaptan sonra sitenin şüphelenmemesi için rastgele bekle
+        time.sleep(random.uniform(10.0, 20.0))
                 
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
