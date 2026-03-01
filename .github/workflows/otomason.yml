@@ -1,32 +1,29 @@
-name: Instagram Otomasyon (Paralel)
+name: Instagram Otomasyon
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
   indir:
-    strategy:
-      fail-fast: false
-      matrix:
-        grup: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - name: Calistir
+      - name: Baslat
         env:
           GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
-          IG_SESSIONID: ${{ secrets.IG_SESSIONID }}
-          GRUP_NO: ${{ matrix.grup }}
         run: |
+          pip install playwright requests google-api-python-client google-auth -q
+          playwright install chromium
+          playwright install-deps chromium
           python indir.py
-      - name: Kaydet
+      - name: Arsivle
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add arsiv.json
-          git diff --staged --quiet || (git commit -m "update group ${{ matrix.grup }}" && git push)
+          git diff --staged --quiet || (git commit -m "update" && git push)
