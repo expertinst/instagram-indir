@@ -53,7 +53,6 @@ def get_links(hesap, arsiv):
     target = f"https://www.instagram.com/stories/{hesap}/"
     
     with sync_playwright() as p:
-        # Bot kimliğini silen çekirdek ayarlar
         browser = p.chromium.launch(
             headless=True,
             args=["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"]
@@ -63,37 +62,58 @@ def get_links(hesap, arsiv):
             viewport={"width": 1920, "height": 1080}
         )
         
-        # 🛡️ YERLEŞİK HAYALET MODU (Manuel Enjeksiyon)
+        # Yerleşik Hayalet Modu: Tarayıcı kimliğini gizler
         context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
         page = context.new_page()
         page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
 
-        try:
-            print(f"🔍 {hesap} taranıyor...")
-            page.goto("https://fastdl.dev/", wait_until="domcontentloaded", timeout=60000)
-            
-            # Cloudflare arka plan doğrulaması için insani bir bekleme
-            time.sleep(3)
-            
-            box = page.locator('input[name="url"]')
-            box.wait_for(timeout=20000)
-            box.fill(target)
-            page.keyboard.press("Enter")
-            
-            page.wait_for_selector('.download-box, a[href*="mp4"]', timeout=40000)
-            time.sleep(12) 
-            
-            anchors = page.locator('a[href*="mp4"], a[href*="token="]').all()
-            for a in anchors:
-                href = a.get_attribute("href")
-                if href and href not in arsiv and href not in linkler:
-                    if "googlevideo" not in href:
-                        linkler.append(href)
-                        
-        except Exception as e:
-            # GERÇEK HATAYI YAZDIR (Gizlemiyoruz)
-            print(f"⚠️ @{hesap} BULUNAMADI. SEBEP: {str(e).splitlines()[0]}")
+        # YEDEKLEME SİSTEMİ: İki farklı siteyi sırayla dener
+        siteler = [
+            {
+                "url": "https://igram.world/story-downloader",
+                "kutu": 'input[name="url"], input[id*="search"]',
+                "sonuc": 'a[href*="dl="], a.btn-download, a[download]'
+            },
+            {
+                "url": "https://sssinstagram.com/story-saver",
+                "kutu": 'input[name="id"], input[type="text"]',
+                "sonuc": 'a[href*="dl="], a.download-btn'
+            }
+        ]
+        
+        print(f"🔍 {hesap} taranıyor...")
+        basarili = False
+        
+        for site in siteler:
+            if basarili: break
+            try:
+                page.goto(site["url"], wait_until="domcontentloaded", timeout=45000)
+                time.sleep(3)
+                
+                box = page.locator(site["kutu"]).first
+                box.wait_for(timeout=15000)
+                box.fill(target)
+                page.keyboard.press("Enter")
+                
+                page.wait_for_selector(site["sonuc"], timeout=35000)
+                time.sleep(8) 
+                
+                anchors = page.locator(site["sonuc"]).all()
+                for a in anchors:
+                    href = a.get_attribute("href")
+                    if href and href not in arsiv and href not in linkler:
+                        if "googlevideo" not in href:
+                            linkler.append(href)
+                            
+                if len(linkler) > 0:
+                    basarili = True
+                    print(f"⚡ Kaynak bulundu: {site['url']}")
+            except:
+                pass 
+        
+        if not basarili and len(linkler) == 0:
+            print(f"⚠️ @{hesap} BULUNAMADI. Hikaye yok veya siteler erişimi reddetti.")
         
         browser.close()
     return linkler
