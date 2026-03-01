@@ -1,4 +1,4 @@
-import os, sys, subprocess, json, time, requests, random
+import os, sys, subprocess, json, time
 
 # ══════════════════════════════════════════════════════════════════════════
 TUM_HESAPLAR = [
@@ -32,87 +32,13 @@ DRIVE_KLASOR_ID = "1OaRDgcKjbEKM1gPny3CE19s8vaFUs03T"
 ARSIV_DOSYA = "arsiv.json"
 
 def kurulum():
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "google-api-python-client", "google-auth", "requests", "-q"])
-    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp", "google-api-python-client", "google-auth", "-q"])
 
 def get_drive_folder_id(service, parent_id, folder_name):
     query = f"name = '{folder_name}' and '{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     items = service.files().list(q=query, fields="files(id)").execute().get('files', [])
     if items: return items[0]['id']
     return service.files().create(body={'name': folder_name, 'parents': [parent_id], 'mimeType': 'application/vnd.google-apps.folder'}, fields='id').execute().get('id')
-
-def get_links(hesap, arsiv):
-    from playwright.sync_api import sync_playwright
-    linkler = []
-    target = f"https://www.instagram.com/stories/{hesap}/"
-    
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080}
-        )
-        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        page = context.new_page()
-        page.route("**/*", lambda route: route.abort() if any(x in route.request.url for x in ["ads", "doubleclick", "analytics"]) else route.continue_())
-        
-        # YEDEKLEME SİSTEMİ: İki farklı siteyi sırayla dener
-        siteler = [
-            {
-                "isim": "InDown.io",
-                "url": "https://indown.io/instagram-story-download",
-                "kutu": 'input[name="link"], input[type="text"]',
-                "buton": 'button[type="submit"]',
-                "sonuc": 'a.btn-danger, a[download], a[href*="dl="]'
-            },
-            {
-                "isim": "SSSInstagram",
-                "url": "https://sssinstagram.com/story-saver",
-                "kutu": 'input[type="text"], input[name="id"]',
-                "buton": 'button[id="submit"], button[type="submit"]',
-                "sonuc": 'a.download-btn, a[href*="dl="], a[download]'
-            }
-        ]
-        
-        print(f"🔍 Arıyor: @{hesap}")
-        
-        for site in siteler:
-            if linkler: break # Link bulduysa diğer siteyi aramayı bırak
-            
-            try:
-                page.goto(site["url"], wait_until="domcontentloaded", timeout=45000)
-                time.sleep(1)
-                
-                box = page.locator(site["kutu"]).first
-                box.wait_for(timeout=15000)
-                box.fill(target)
-                time.sleep(0.5)
-                
-                btn = page.locator(site["buton"]).first
-                if btn.is_visible():
-                    btn.click()
-                else:
-                    page.keyboard.press("Enter")
-                
-                # İndirme kutusunu bekle
-                page.wait_for_selector(site["sonuc"], timeout=35000)
-                time.sleep(5)
-                
-                anchors = page.locator(site["sonuc"]).all()
-                for a in anchors:
-                    href = a.get_attribute("href")
-                    if href and ("instagram" in href or "mp4" in href or "download" in href or "dl=" in href):
-                        if href not in arsiv and "googlevideo" not in href:
-                            linkler.append(href)
-                            
-                if linkler:
-                    print(f"⚡ Kaynak bulundu: {site['isim']}")
-                    
-            except Exception as e:
-                pass # Bu site patlarsa sessizce diğerine geç
-                
-        browser.close()
-    return linkler
 
 def grup_ayir(liste, toplam_grup):
     grup_no = int(os.environ.get("GRUP_NO", 0))
@@ -124,47 +50,74 @@ def grup_ayir(liste, toplam_grup):
 if __name__ == "__main__":
     grup_no = int(os.environ.get("GRUP_NO", 0))
     
-    bekleme_suresi = grup_no * 10 
+    bekleme_suresi = grup_no * 3 
     if bekleme_suresi > 0:
         time.sleep(bekleme_suresi)
 
     kurulum()
+    import yt_dlp
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
     from googleapiclient.http import MediaFileUpload
     
+    session_id = os.environ.get("IG_SESSIONID")
+    if not session_id:
+        print("❌ HATA: IG_SESSIONID bulunamadı!")
+        sys.exit(1)
+        
     creds = Credentials.from_authorized_user_info(json.loads(os.environ.get("GDRIVE_TOKEN")))
     service = build("drive", "v3", credentials=creds)
     
     HESAPLAR = grup_ayir(TUM_HESAPLAR, 10)
-    print(f"🚀 GRUP {grup_no} BAŞLADI: {HESAPLAR}")
+    print(f"🚀 GRUP {grup_no} BAŞLADI (Direct API Mode): {HESAPLAR}")
     
     arsiv = json.load(open(ARSIV_DOSYA)) if os.path.exists(ARSIV_DOSYA) else []
     
+    # yt-dlp'nin tekrarları atlaması için arşivi geçici dosyaya yazıyoruz
+    with open("yt_archive.txt", "w") as f:
+        for kayit in arsiv:
+            f.write(f"instagram {kayit}\n")
+            
     for hesap in HESAPLAR:
+        print(f"🔍 Taranıyor: @{hesap}")
         os.makedirs(hesap, exist_ok=True)
         target_folder = get_drive_folder_id(service, DRIVE_KLASOR_ID, hesap)
-        found = get_links(hesap, arsiv)
         
-        for i, link in enumerate(found):
-            ext = "mp4" if "mp4" in link or "video" in link else "jpg"
-            yol = f"{hesap}/{hesap}_{int(time.time())}_{i}.{ext}"
-            
+        ydl_opts = {
+            'outtmpl': f'{hesap}/%(id)s.%(ext)s',
+            'http_headers': {'Cookie': f'sessionid={session_id}'},
+            'download_archive': 'yt_archive.txt',
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+            'sleep_requests': 1.5, # Sahte hesabın banlanmaması için nefes aralığı
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
-                resp = requests.get(link, stream=True, timeout=60)
-                if resp.status_code == 200:
-                    with open(yol, "wb") as f:
-                        for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
-                    
-                    if os.path.getsize(yol) > 20000:
-                        service.files().create(body={'name': os.path.basename(yol), 'parents': [target_folder]}, media_body=MediaFileUpload(yol, resumable=True)).execute()
-                        arsiv.append(link)
-                        print(f"✅ Drive'a Yüklendi: {yol}")
-                    else:
-                        print(f"🚫 Bozuk dosya atlandı: {yol}")
-                
-                if os.path.exists(yol): os.remove(yol)
-            except Exception as e:
-                print(f"❌ İndirme hatası: {e}")
-                
+                ydl.download([f'https://www.instagram.com/stories/{hesap}/'])
+            except: pass
+            
+        for dosya in os.listdir(hesap):
+            yol = os.path.join(hesap, dosya)
+            if os.path.isfile(yol):
+                if os.path.getsize(yol) > 20000:
+                    try:
+                        service.files().create(body={'name': dosya, 'parents': [target_folder]}, media_body=MediaFileUpload(yol, resumable=True)).execute()
+                        print(f"✅ Klasöre Yüklendi: {dosya}")
+                    except Exception as e:
+                        print(f"❌ Yükleme hatası: {e}")
+                os.remove(yol)
+        
+        time.sleep(3)
+        
+    # Yeni indirilen videoların ID'lerini ana arşive kaydet
+    if os.path.exists("yt_archive.txt"):
+        with open("yt_archive.txt", "r") as f:
+            for line in f:
+                if line.startswith("instagram "):
+                    vid = line.strip().split(" ")[1]
+                    if vid not in arsiv:
+                        arsiv.append(vid)
+                        
     with open(ARSIV_DOSYA, "w") as f: json.dump(arsiv, f)
